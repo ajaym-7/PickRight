@@ -5,7 +5,11 @@ from sqlalchemy import text
 
 from app.database import SessionLocal, engine
 from app.voting import cast_vote
-
+from app.exceptions import (
+    AlreadyVotedError,
+    BallotIdConflictError,
+    InvalidOptionError,
+)
 
 
 @pytest.mark.anyio
@@ -82,7 +86,7 @@ async def test_cast_vote_rejects_duplicate_vote(voting_setup):
 
     # Second vote
     with pytest.raises(
-        ValueError,
+        AlreadyVotedError,
         match="already voted or is not eligible",
     ):
         await cast_vote(
@@ -142,7 +146,7 @@ async def test_cast_vote_rejects_option_from_different_poll(voting_setup):
 
     # Try to vote in the original poll using the other poll's option
     with pytest.raises(
-        ValueError,
+        InvalidOptionError,
         match="Option does not belong to poll",
     ):
         await cast_vote(
@@ -292,7 +296,7 @@ async def test_cast_vote_rejects_idempotency_conflict(voting_setup):
 
     # Same id, but different option.
     with pytest.raises(
-        ValueError,
+        BallotIdConflictError,
         match="Ballot ID already used with different payload",
     ):
         await cast_vote(
@@ -335,7 +339,7 @@ async def test_concurrent_votes_from_same_user_allow_only_one(voting_setup):
                     ballot_id=ballot_id,
                 )
                 return ("success", result)
-            except ValueError as exc:
+            except AlreadyVotedError as exc:
                 return ("rejected", str(exc))
 
     results = await asyncio.gather(

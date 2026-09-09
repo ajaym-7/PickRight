@@ -3,8 +3,16 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.hashing import compute_record_hash
 
+from app.exceptions import (
+    AlreadyVotedError,
+    BallotIdConflictError,
+    BallotStateMissingError,
+    InvalidOptionError,
+    PollNotOpenError,
+)
 
 
 async def cast_vote(
@@ -38,8 +46,10 @@ async def cast_vote(
                 # Same id + same payload = idempotent success.
                 return ballot_id
 
-            raise ValueError("Ballot ID already used with different payload")
-
+            raise BallotIdConflictError(
+                "Ballot ID already used with different payload"
+            )
+        
         # 2. Verify poll is open and within its voting window.
         poll = (
             await session.execute(
@@ -56,7 +66,7 @@ async def cast_vote(
         ).scalar_one_or_none()
 
         if poll is None:
-            raise ValueError("Poll is not open")
+            raise PollNotOpenError("Poll is not open")
 
         # 3. Verify that the option belongs to this poll.
         option = (
@@ -75,7 +85,7 @@ async def cast_vote(
         ).scalar_one_or_none()
 
         if option is None:
-            raise ValueError("Option does not belong to poll")
+            raise InvalidOptionError("Option does not belong to poll")
 
         # 4. Atomically claim user's eligibility.
         eligibility = (
@@ -98,7 +108,9 @@ async def cast_vote(
         ).scalar_one_or_none()
 
         if eligibility is None:
-            raise ValueError("User has already voted or is not eligible")
+            raise AlreadyVotedError(
+                "User has already voted or is not eligible"
+            )
 
         # 5. Lock the poll's ballot-chain state.
         state = (
@@ -114,7 +126,7 @@ async def cast_vote(
         ).mappings().one_or_none()
 
         if state is None:
-            raise ValueError("Ballot state does not exist")
+            raise BallotStateMissingError("Ballot state does not exist")
 
         # 6. Create the ballot.
         created_at = datetime.now(timezone.utc)
