@@ -18,6 +18,11 @@ from app.exceptions import (
     PollNotOpenError,
 )
 
+from app.authentication import (
+    AuthenticationError,
+    get_current_user_id,
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,10 +53,7 @@ async def readiness_check():
         )
 
 
-def get_current_user_id() -> UUID:
-    # Temporary authentication placeholder.
-    # OAuth/authentication will replace this later.
-    return UUID("00000000-0000-0000-0000-000000000001")
+
 
 @app.post(
     "/polls/{poll_id}/vote",
@@ -103,3 +105,10 @@ async def vote(
         )
 
     return VoteResponse(ballot_id=ballot_id)
+
+@app.exception_handler(AuthenticationError)
+async def authentication_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=401,
+        content={"detail": str(exc)},
+    )
