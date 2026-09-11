@@ -20,6 +20,35 @@ async def get_or_create_user(
     if not provider or not provider_user_id or not email:
         raise AuthenticationError("Invalid authentication data")
 
+    result = await session.execute(
+        text("""
+            INSERT INTO users (
+                email,
+                oauth_provider,
+                provider_user_id
+            )
+            VALUES (
+                :email,
+                :provider,
+                :provider_user_id
+            )
+            ON CONFLICT (oauth_provider, provider_user_id)
+            DO NOTHING
+            RETURNING id
+        """),
+        {
+            "email": email,
+            "provider": provider,
+            "provider_user_id": provider_user_id,
+        },
+    )
+
+    user_id = result.scalar_one_or_none()
+
+    if user_id is not None:
+        await session.commit()
+        return user_id
+
     existing_user = (
         await session.execute(
             text("""
@@ -33,38 +62,11 @@ async def get_or_create_user(
                 "provider_user_id": provider_user_id,
             },
         )
-    ).scalar_one_or_none()
-
-    if existing_user is not None:
-        return existing_user
-
-    user_id = (
-        await session.execute(
-            text("""
-                INSERT INTO users (
-                    email,
-                    oauth_provider,
-                    provider_user_id
-                )
-                VALUES (
-                    :email,
-                    :provider,
-                    :provider_user_id
-                )
-                RETURNING id
-            """),
-            {
-                "email": email,
-                "provider": provider,
-                "provider_user_id": provider_user_id,
-            },
-        )
     ).scalar_one()
 
     await session.commit()
 
-    return user_id
-
+    return existing_user
 
 async def get_current_user_id(
     authorization: str | None = Header(default=None),

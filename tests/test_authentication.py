@@ -1,4 +1,4 @@
-import pytest
+import pytest, asyncio
 from sqlalchemy import text
 from uuid import uuid4
 
@@ -117,4 +117,40 @@ async def test_missing_authentication_data_is_rejected():
 
     finally:
         await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_concurrent_same_oauth_identity_returns_same_user():
+    await engine.dispose()
+
+    suffix = uuid4()
+    provider = "test"
+    provider_user_id = f"concurrent-user-{suffix}"
+    email = f"concurrent-{suffix}@example.com"
+
+    session_one = SessionLocal()
+    session_two = SessionLocal()
+
+    try:
+        user_ids = await asyncio.gather(
+            get_or_create_user(
+                session=session_one,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                email=email,
+            ),
+            get_or_create_user(
+                session=session_two,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                email=email,
+            ),
+        )
+
+        assert user_ids[0] == user_ids[1]
+
+    finally:
+        await session_one.close()
+        await session_two.close()
         await engine.dispose()
