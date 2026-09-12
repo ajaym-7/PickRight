@@ -5,9 +5,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = False
-
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
+
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_discovery_url: str = ""
+    oidc_redirect_uri: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
