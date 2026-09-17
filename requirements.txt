@@ -4,4 +4,5 @@ pydantic-settings
 sqlalchemy
 asyncpg
 pytest
-httpx
+Authlib==1.8.0
+httpx==0.28.1

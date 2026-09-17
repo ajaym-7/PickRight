@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import Header
+from fastapi import Header, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,8 +32,7 @@ async def get_or_create_user(
                 :provider,
                 :provider_user_id
             )
-            ON CONFLICT (oauth_provider, provider_user_id)
-            DO NOTHING
+            ON CONFLICT DO NOTHING
             RETURNING id
         """),
         {
@@ -68,16 +67,27 @@ async def get_or_create_user(
 
     return existing_user
 
+
 async def get_current_user_id(
+    request: Request,
     authorization: str | None = Header(default=None),
 ) -> UUID:
     """
-    Resolve the authenticated user from the Authorization header.
+    Resolve the authenticated application user.
 
-    Temporary authentication mechanism.
-    Real OAuth token validation will replace this.
+    OIDC users are authenticated through the application session.
+    Bearer test-token remains available temporarily for development.
     """
 
+    session_user_id = request.session.get("user_id")
+
+    if session_user_id:
+        try:
+            return UUID(session_user_id)
+        except (ValueError, TypeError):
+            raise AuthenticationError("Invalid session user ID")
+
+    # Temporary development authentication
     if authorization is None:
         raise AuthenticationError("Authentication required")
 
@@ -89,7 +99,6 @@ async def get_current_user_id(
     if not token:
         raise AuthenticationError("Authentication required")
 
-    # Temporary development token.
     if token != "test-token":
         raise AuthenticationError("Invalid authentication token")
 

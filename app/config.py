@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
 
+    session_secret: str = ""
+
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_discovery_url: str = ""
