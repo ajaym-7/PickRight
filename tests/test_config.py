@@ -15,6 +15,7 @@ def test_settings_load_from_environment(monkeypatch):
     assert settings.redis_url == "redis://localhost:6379/0"
 
 def test_database_url_is_required(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
