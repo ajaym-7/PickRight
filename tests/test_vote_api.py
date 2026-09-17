@@ -4,6 +4,8 @@ from sqlalchemy import text
 from uuid import uuid4
 
 from app.main import app, get_current_user_id
+from app.database import SessionLocal
+
 
 
 async def make_client(user_id):
@@ -193,3 +195,107 @@ async def test_vote_endpoint_rejects_ballot_id_conflict(voting_setup):
 
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_vote_endpoint_uses_oidc_session(
+    voting_setup,
+    monkeypatch,
+):
+    _, user_id, poll_id, option_id = voting_setup
+
+    captured = {}
+
+    async def mock_authorization_url(state, nonce):
+        captured["state"] = state
+        captured["nonce"] = nonce
+        return "https://example.com/authorize"
+
+    async def mock_exchange_code(code):
+        assert code == "test-code"
+
+        return {
+            "id_token": "fake-id-token",
+        }
+
+    async def mock_validate_id_token(token, nonce):
+        assert token["id_token"] == "fake-id-token"
+        assert nonce == captured["nonce"]
+
+        return {
+            "sub": "session-test-provider-user",
+            "email": "session-test@example.com",
+        }
+
+    async def mock_get_or_create_user(
+        session,
+        provider,
+        provider_user_id,
+        email,
+    ):
+        assert provider == "google"
+        assert provider_user_id == "session-test-provider-user"
+        assert email == "session-test@example.com"
+
+        return user_id
+
+    monkeypatch.setattr(
+        "app.main.create_authorization_url",
+        mock_authorization_url,
+    )
+
+    monkeypatch.setattr(
+        "app.main.exchange_code_for_token",
+        mock_exchange_code,
+    )
+
+    monkeypatch.setattr(
+        "app.main.validate_id_token",
+        mock_validate_id_token,
+    )
+
+    monkeypatch.setattr(
+        "app.main.get_or_create_user",
+        mock_get_or_create_user,
+    )
+
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+
+        # Establish the OIDC application session.
+        login_response = await client.get(
+            "/auth/login",
+            follow_redirects=False,
+        )
+
+        assert login_response.status_code == 302
+
+        state = captured["state"]
+
+        callback_response = await client.get(
+            f"/auth/callback"
+            f"?code=test-code"
+            f"&state={state}",
+        )
+
+        assert callback_response.status_code == 200
+
+        body = callback_response.json()
+
+        assert body["user_id"] == str(user_id)
+
+        # Do NOT provide an Authorization header.
+        # Authentication must come from the OIDC session.
+        vote_response = await client.post(
+            f"/polls/{poll_id}/vote",
+            json={
+                "option_id": str(option_id),
+            },
+        )
+
+    assert vote_response.status_code == 200
+    assert "ballot_id" in vote_response.json()
